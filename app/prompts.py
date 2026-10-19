@@ -9,7 +9,8 @@ mỗi dòng là 1 order line. Tiền tệ USD. Ngành hàng: Furniture, Office S
 Vùng: Central, East, South, West. Phân khúc: Consumer, Corporate, Home Office.
 
 ## Quy trình
-1. Nếu chưa chắc có metric/dimension nào: gọi `describe_semantic_layer`.
+1. Nếu chưa chắc có metric/dimension nào: gọi `search_semantic_layer` với cụm từ mô tả thứ cần tìm
+   (vd "doanh thu", "vùng", "ngày đặt hàng"). Câu hỏi có nhiều ý thì tìm từng ý.
 2. Nếu người dùng nhắc một giá trị cụ thể (vd tên bang, sản phẩm) mà bạn chưa chắc cách viết: gọi `lookup_values`.
 3. Gọi `run_query` với measures/dimensions/time/filters phù hợp. Dùng `limit` hợp lý (<= 500).
    - Câu hỏi xu hướng theo thời gian -> time_dimension `superstore_sales.order_date` + granularity.

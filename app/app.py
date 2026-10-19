@@ -1,4 +1,6 @@
 """Chat UI tối giản: hỏi đáp + bảng + biểu đồ + xem query/SQL Cube sinh ra."""
+import logging
+import os
 import uuid
 
 import pandas as pd
@@ -7,6 +9,9 @@ import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()  # chạy local: đọc OPENAI_API_KEY... từ .env (trong docker đã có env_file)
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from agent import ask, build_agent, make_memory  # noqa: E402  (sau load_dotenv)
 

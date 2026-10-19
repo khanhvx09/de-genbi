@@ -15,14 +15,14 @@ DEFAULT_TZ = os.getenv("CUBE_TIMEZONE", "Asia/Singapore")
 _meta_cache: dict = {"at": 0.0, "data": None}
 
 
-def _token(user_id: str) -> str:
+def make_token(user_id: str) -> str:
     # security context -> Cube có thể dùng cho row-level security (queryRewrite) về sau
     payload = {"sub": user_id, "user_id": user_id, "exp": int(time.time()) + 3600}
     return jwt.encode(payload, CUBE_SECRET, algorithm="HS256")
 
 
 def _headers(user_id: str) -> dict:
-    return {"Authorization": _token(user_id), "Content-Type": "application/json"}
+    return {"Authorization": make_token(user_id), "Content-Type": "application/json"}
 
 
 def get_meta(user_id: str = "agent", ttl: int = 300) -> dict:

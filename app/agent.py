@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Literal
@@ -16,9 +18,14 @@ from langchain.tools import ToolRuntime, tool
 from pydantic import BaseModel, Field
 
 import cube_client
+import semantic_index
 from prompts import SYSTEM_PROMPT
 
+logger = logging.getLogger(__name__)
+
 MAX_ROWS_TO_LLM = 50
+DEFAULT_TOP_K = 10
+MAX_TOP_K = 30
 DEFAULT_LLM = "openai:gpt-4.1"  # đổi qua env LLM_MODEL, vd anthropic:claude-sonnet-5-5
 RECURSION_LIMIT = 25
 
@@ -51,15 +58,17 @@ def _check_members(names: list[str]) -> list[str]:
 
 
 @tool
-def describe_semantic_layer(runtime: ToolRuntime[UserContext]) -> str:
-    """Liệt kê các measure (chỉ số) và dimension (chiều phân tích) có thể truy vấn, kèm mô tả và từ đồng nghĩa."""
-    members = cube_client.public_members(runtime.context.user_id)
-    views = {m["view"]: m["view_description"] for m in members.values()}
-    lines = [f"VIEW {v}: {d}" for v, d in views.items()]
-    for name, m in members.items():
-        syn = f" | đồng nghĩa: {', '.join(m['synonyms'])}" if m["synonyms"] else ""
-        lines.append(f"- [{m['kind']}/{m['type']}] {name}: {m['description']}{syn}")
-    return "\n".join(lines)
+def search_semantic_layer(query: str, k: int = DEFAULT_TOP_K) -> str:
+    """Tìm các measure (chỉ số) và dimension (chiều phân tích) liên quan tới câu hỏi, kèm mô tả.
+    `query` là cụm từ mô tả thứ cần tìm, vd "doanh thu theo vùng"."""
+    try:
+        docs = semantic_index.search(query, k=min(max(k, 1), MAX_TOP_K))
+    except Exception as e:
+        logger.exception("search_semantic_layer failed query=%r", query)
+        return f"Lỗi tìm semantic layer: {e}"
+    logger.info("search_semantic_layer query=%r hits=%s",
+                query, [d.metadata["column_name"] for d in docs])
+    return semantic_index.format_docs(docs)
 
 
 @tool
@@ -67,7 +76,7 @@ def lookup_values(dimension: str, contains: str = "", limit: int = 20,
                   runtime: ToolRuntime[UserContext] = None) -> str:
     """Tra các giá trị thực tế của một dimension dạng chuỗi (vd tên vùng, bang, ngành hàng) để dùng đúng trong filter."""
     if bad := _check_members([dimension]):
-        return f"Không có member: {bad}. Gọi describe_semantic_layer."
+        return f"Không có member: {bad}. Gọi search_semantic_layer."
     q: dict = {"dimensions": [dimension], "limit": limit, "order": {dimension: "asc"}}
     if contains:
         q["filters"] = [{"member": dimension, "operator": "contains", "values": [contains]}]
@@ -89,7 +98,8 @@ def run_query(measures: list[str],
     if time_dimension:
         names.append(time_dimension.dimension)
     if bad := _check_members(names):
-        return f"Không có member: {bad}. Gọi describe_semantic_layer để xem tên đúng."
+        logger.warning("run_query unknown members: %s", bad)
+        return f"Không có member: {bad}. Gọi search_semantic_layer để xem tên đúng."
 
     q: dict = {"measures": measures, "dimensions": dimensions, "limit": min(max(limit, 1), 500)}
     if time_dimension:
@@ -105,11 +115,14 @@ def run_query(measures: list[str],
         q["order"] = order
 
     user_id = runtime.context.user_id if runtime else "agent"
+    logger.info("run_query user=%s query=%s", user_id, json.dumps(q, ensure_ascii=False))
     try:
         res = cube_client.load(q, user_id)
     except Exception as e:  # trả lỗi cho LLM tự sửa query
+        logger.exception("run_query Cube error user=%s", user_id)
         return f"Lỗi Cube: {e}"
     rows = res.get("data", [])
+    logger.info("run_query rows=%d", len(rows))
     annotation = res.get("annotation", {})
     record = {
         "id": str(uuid.uuid4())[:8],
@@ -145,7 +158,7 @@ def recall_user_notes(runtime: ToolRuntime[UserContext]) -> str:
     return json.dumps([i.value["note"] for i in items], ensure_ascii=False)
 
 
-TOOLS = [describe_semantic_layer, lookup_values, run_query, save_user_note, recall_user_notes]
+TOOLS = [search_semantic_layer, lookup_values, run_query, save_user_note, recall_user_notes]
 
 
 def make_model():
@@ -212,13 +225,20 @@ def ask(agent, message: str, thread_id: str, user_id: str = "anonymous") -> dict
     """Hỏi agent một câu. Trả {"answer": str, "results": [query record + chart]}."""
     results: list = []
     token = current_results.set(results)
+    started = time.perf_counter()
+    logger.info("ask start thread=%s user=%s message=%r", thread_id[:8], user_id, message)
     try:
         out = agent.invoke(
             {"messages": [{"role": "user", "content": message}]},
             config={"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT},
             context=UserContext(user_id=user_id),
         )
+    except Exception:
+        logger.exception("ask failed thread=%s", thread_id[:8])
+        raise
     finally:
         current_results.reset(token)
+    logger.info("ask done thread=%s queries=%d elapsed=%.2fs",
+                thread_id[:8], len(results), time.perf_counter() - started)
     return {"answer": _text(out["messages"][-1].content),
             "results": [{**r, "chart": suggest_chart(r)} for r in results]}

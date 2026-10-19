@@ -7,6 +7,7 @@ plotly>=5.22
 python-dotenv>=1.0
 langchain>=1.0,<2
 langgraph>=1.0,<2
+langchain-community>=0.4.2
 langchain-openai
 langchain-anthropic
 # Chỉ cần khi set AGENT_DB_URI (trí nhớ bền qua restart)
