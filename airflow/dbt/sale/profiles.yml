@@ -1,0 +1,32 @@
+# dbt profile cho Trino. Catalog mặc định `delta` (silver/gold). Ngoại lệ: bronze CSV nằm ở catalog `hive`, cấu hình bằng var bronze_catalog trong dbt_project.yml.
+# Chạy: dbt debug --profiles-dir .   (hoặc export DBT_PROFILES_DIR=/opt/airflow/dbt/sale)
+#   - target `dev`    : chạy từ máy host, Trino expose ở localhost:8085
+#   - target `docker` : chạy trong container Airflow, nối Trino qua network nội bộ
+sale:
+  target: "{{ env_var('DBT_TARGET', 'docker') }}"
+  outputs:
+    dev:
+      type: trino
+      method: none            # Trino local không bật auth
+      user: "{{ env_var('TRINO_USER', 'dbt') }}"
+      host: "{{ env_var('TRINO_HOST', 'localhost') }}"
+      port: "{{ env_var('TRINO_PORT', '8085') | int }}"
+      http_scheme: http
+      database: delta         # = Trino catalog
+      schema: default         # schema mặc định; folder silver/gold đặt +schema riêng
+      threads: 4
+      session_properties:
+        query_max_run_time: 30m
+
+    docker:
+      type: trino
+      method: none
+      user: "{{ env_var('TRINO_USER', 'airflow') }}"
+      host: "{{ env_var('TRINO_HOST', 'trino') }}"
+      port: "{{ env_var('TRINO_INTERNAL_PORT', '8080') | int }}"
+      http_scheme: http
+      database: delta
+      schema: default
+      threads: 4
+      session_properties:
+        query_max_run_time: 30m

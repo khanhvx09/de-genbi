@@ -1,0 +1,13 @@
+# Extra Python deps needed by the Spark Connect client (used by `spark-pipelines`,
+# the Spark 4.1 Declarative Pipelines CLI, and any pyspark.sql.connect session).
+# Not included in the deltaio/delta-docker base image.
+pandas>=2.2.0
+pyarrow
+grpcio
+grpcio-status
+googleapis-common-protos
+zstandard>=0.25.0
+
+# %%sparksql cell magic for running Spark SQL directly in notebook cells
+# against the active SparkSession, instead of spark.sql(...).show().
+sparksql-magic

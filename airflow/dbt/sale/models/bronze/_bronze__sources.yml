@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: bronze
+    database: "{{ var('bronze_catalog') }}"
+    schema: "{{ var('bronze_schema') }}"
+    description: >
+      File CSV Superstore (Kaggle vivek468/superstore-dataset-final) do task download_superstore_to_s3
+      đẩy lên RustFS. External table tạo bởi macro create_bronze.
+    tables:
+      - name: superstore_raw
+        description: "1 dòng = 1 order line. CSV có header (đã bỏ qua), đã đổi sang UTF-8. Tất cả cột là varchar."
+        columns:
+          - name: row_id
+            data_tests: [not_null]
+          - name: order_id
+            data_tests: [not_null]
+          - name: order_date
+            description: "Dạng M/D/YYYY"
+          - name: ship_date
+            description: "Dạng M/D/YYYY"
+          - name: ship_mode
+          - name: customer_id
+          - name: customer_name
+          - name: segment
+          - name: country
+          - name: city
+          - name: state
+          - name: postal_code
+          - name: region
+          - name: product_id
+          - name: category
+          - name: sub_category
+          - name: product_name
+          - name: sales
+          - name: quantity
+          - name: discount
+          - name: profit

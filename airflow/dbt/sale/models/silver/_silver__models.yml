@@ -1,0 +1,37 @@
+version: 2
+
+models:
+  - name: superstore_orders
+    description: >
+      Order line Superstore đã ép kiểu, parse ngày, null -> 0 cho số đo, khử trùng lặp theo row_id.
+    columns:
+      - name: row_id
+        data_tests: [unique, not_null]
+      - name: order_id
+        data_tests: [not_null]
+      - name: order_date
+        data_tests: [not_null]
+      - name: ship_date
+      - name: segment
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Consumer, Corporate, Home Office]
+      - name: region
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Central, East, South, West]
+      - name: category
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Furniture, Office Supplies, Technology]
+      - name: sales
+        description: Doanh thu (USD) của order line, đã trừ discount
+      - name: discount
+        description: Tỷ lệ giảm giá 0..1
+      - name: profit
+        description: Lợi nhuận (USD), có thể âm
+      - name: source_file
+        description: File raw trên RustFS mà dòng này đến từ

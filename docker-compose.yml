@@ -1,0 +1,229 @@
+services:
+  spark-master:
+    image: deltaio/delta-docker:4.3.1
+    container_name: spark-master
+    entrypoint: ["bash", "/opt/startup.sh"]
+    stdin_open: true   # docker run -i
+    tty: true          # docker run -t
+    ports:
+      - "8888:8888"    # Jupyter Lab, used by startup.sh
+      - "7077:7077"    # Spark RPC, used by spark-worker
+      - "8080:8080"    # Spark master Web UI
+      - "4040:4040"    # Spark Application UI (active job/SQL/stages)
+    volumes:
+      - ./startup.sh:/opt/startup.sh:ro
+      - ./requirements.txt:/opt/requirements.txt:ro
+      # Hadoop picks up fs.s3a.* from any *-site.xml under $SPARK_HOME/conf,
+      # so the driver gets its RustFS/S3A settings from here instead of a
+      # wall of --conf spark.hadoop.fs.s3a.* flags in startup.sh.
+      - ./hive-metastore/core-site.xml:/opt/spark/conf/core-site.xml:ro
+      - ./demo:/opt/work
+    working_dir: /opt
+    depends_on:
+      - hive-metastore
+
+  spark-worker:
+    image: deltaio/delta-docker:4.3.1
+    container_name: spark-worker
+    entrypoint: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: 2
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_DIR: /tmp/spark-work    # /opt/spark isn't writable by NBuser
+    volumes:
+      # Executors read Hadoop config from their own local $SPARK_HOME/conf,
+      # not from the driver's — needs the same file here too.
+      - ./hive-metastore/core-site.xml:/opt/spark/conf/core-site.xml:ro
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"    # Spark worker Web UI
+      - "4041:4040"    # Spark driver UI (cluster-mode driver lands here — single worker)
+
+  rustfs:
+    # RustFS: object storage tương thích S3 (Rust). Chỉ hỗ trợ path-style -> client phải bật path-style.
+    image: rustfs/rustfs:${RUSTFS_VERSION:-1.0.1}
+    container_name: rustfs
+    hostname: rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web console
+    volumes:
+      - ./data_platform/rustfs:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Shared Postgres server: hive metastore DB (hive/hive), the agent's LangGraph
+  # checkpointer DB (agent/agent) and Airflow's metadata DB (airflow/airflow,
+  # used by docker-compose-airflow.yaml). agent/airflow are created by ./initdb.
+  metastore-db:
+    image: postgres:15
+    container_name: metastore-db
+    environment:
+      POSTGRES_DB: hive
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d hive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"    # Postgres
+    volumes:
+      - metastore_db_data:/var/lib/postgresql/data
+      # Only runs when the data volume is empty
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      DB_DRIVER: postgres
+      SERVICE_OPTS: >-
+        -Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver
+        -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://metastore-db:5432/hive
+        -Djavax.jdo.option.ConnectionUserName=hive
+        -Djavax.jdo.option.ConnectionPassword=hive
+      # Puts the S3A + AWS SDK jars (already bundled under Hadoop's tools/lib)
+      # on the metastore's classpath so it can create/validate s3a:// locations.
+      HADOOP_CLASSPATH: /opt/hadoop/share/hadoop/tools/lib/*
+    ports:
+      - "9083:9083"    # Thrift metastore API
+    volumes:
+      - ./drivers/postgresql.jar:/opt/hive/lib/postgresql.jar:ro
+      - ./hive-metastore/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+
+  trino:
+    image: trinodb/trino:${TRINO_VERSION:-latest}
+    container_name: trino
+    hostname: trino
+    ports:
+      - "${TRINO_PORT:-8085}:8080"   # 8080 is taken by the Spark master UI
+    environment:
+      # Read by trino/catalog/hive.properties via ${ENV:...}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://rustfs:9000}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-rustfsadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-rustfsadmin}
+      S3_REGION: ${S3_REGION:-us-east-1}
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino/etc/jvm.config:/etc/trino/jvm.config:ro
+      - ./trino/etc/config.properties:/etc/trino/config.properties:ro
+    # Without a limit the JVM sizes its heap at 80% of the whole Docker VM and gets OOM-killed
+    mem_limit: 3g
+    restart: unless-stopped
+    depends_on:
+      - hive-metastore
+      - rustfs
+    # trinodb/trino ships its own HEALTHCHECK (/usr/lib/trino/bin/health-check)
+
+  # cubestore-router:
+  #   image: cubejs/cubestore:${CUBE_VERSION:-latest}
+  #   container_name: cubestore-router
+  #   environment:
+  #     CUBESTORE_SERVER_NAME: cubestore-router:9999
+  #     CUBESTORE_META_PORT: 9999
+  #     CUBESTORE_WORKERS: cubestore-worker-1:10001
+  #     CUBESTORE_REMOTE_DIR: /cube/data
+  #   volumes:
+  #     - cubestore:/cube/data
+
+  # cubestore-worker-1:
+  #   image: cubejs/cubestore:${CUBE_VERSION:-latest}
+  #   container_name: cubestore-worker-1
+  #   environment:
+  #     CUBESTORE_SERVER_NAME: cubestore-worker-1:10001
+  #     CUBESTORE_WORKER_PORT: 10001
+  #     CUBESTORE_WORKERS: cubestore-worker-1:10001
+  #     CUBESTORE_META_ADDR: cubestore-router:9999
+  #     CUBESTORE_REMOTE_DIR: /cube/data
+  #   volumes:
+  #     - cubestore:/cube/data
+  #   depends_on:
+  #     - cubestore-router
+
+  cube:
+    image: cubejs/cube:${CUBE_VERSION:-latest}
+    container_name: cube
+    ports:
+      - "4000:4000"     # REST/GraphQL API + Playground (dev mode)
+      - "15432:15432"   # SQL API (Postgres wire) -> Superset/BI
+    environment:
+      CUBEJS_DEV_MODE: "true"
+      CUBEJS_DB_TYPE: trino
+      CUBEJS_DB_HOST: trino
+      CUBEJS_DB_PORT: 8080
+      CUBEJS_DB_USER: cube
+      CUBEJS_DB_PRESTO_CATALOG: delta      # silver/gold live in the delta catalog
+      CUBEJS_DB_SCHEMA: gold
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:-dev-secret-change-me}
+      CUBEJS_PG_SQL_PORT: 15432
+      CUBEJS_SQL_USER: ${CUBE_SQL_USER:-cube}
+      CUBEJS_SQL_PASSWORD: ${CUBE_SQL_PASSWORD:-cube}
+      CUBEJS_SCHEDULED_REFRESH_DEFAULT: "true"
+      CUBEJS_SCHEDULED_REFRESH_TIMEZONES: Asia/Singapore
+    volumes:
+      - ./cube:/cube/conf
+    depends_on:
+      trino:
+        condition: service_healthy
+
+  # Agent + UI trong một app Streamlit (app/app.py); chạy local: streamlit run app/app.py
+  genbi:
+    build: ./app
+    container_name: genbi
+    ports:
+      - "8501:8501"
+    env_file: [.env]
+    environment:
+      CUBE_API_URL: http://cube:4000/cubejs-api/v1
+      CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:-dev-secret-change-me}
+      # Bỏ comment để trí nhớ bền qua restart (mặc định in-memory):
+      # AGENT_DB_URI: postgresql://agent:agent@metastore-db:5432/agent
+    depends_on:
+      - cube
+
+  # # Connects to Cube's SQL API (cube:15432, user/pass from CUBE_SQL_*)
+  # superset:
+  #   image: apache/superset:${SUPERSET_VERSION:-latest}
+  #   container_name: superset
+  #   ports:
+  #     - "8088:8088"
+  #   environment:
+  #     SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:?set SUPERSET_SECRET_KEY in .env}
+  #   command: >
+  #     /bin/sh -c "
+  #     superset db upgrade &&
+  #     superset fab create-admin --username admin --firstname a --lastname a --email admin@local --password admin || true &&
+  #     superset init &&
+  #     superset run -h 0.0.0.0 -p 8088 --with-threads"
+  #   volumes:
+  #     - superset-home:/app/superset_home
+  #   depends_on:
+  #     - cube
+
+volumes:
+  metastore_db_data:
+  cubestore:
+  superset-home:
+
+# Named explicitly (instead of the default project-prefixed name) so
+# docker-compose-airflow.yaml can join it as an external network and reach
+# metastore-db by service name.
+networks:
+  default:
+    name: data-platform-net

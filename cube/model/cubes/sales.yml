@@ -1,0 +1,133 @@
+cubes:
+  - name: sales
+    sql_table: delta.gold.sales
+    title: Doanh số Superstore
+    description: >
+      Kaggle Superstore — chuỗi bán lẻ đồ nội thất, văn phòng phẩm, thiết bị công nghệ tại Mỹ,
+      đơn hàng từ 03/01/2014 → 30/12/2017. Mỗi dòng = 1 order line (1 sản phẩm trong 1 đơn hàng).
+      Tiền tệ USD.
+
+    measures:
+      - name: total_sales
+        sql: sales
+        type: sum
+        format: currency
+        title: Sales
+        description: Tổng doanh thu (USD, đã trừ giảm giá)
+        meta: { synonyms_vi: ["doanh thu", "doanh số", "revenue", "bán được"] }
+      - name: total_profit
+        sql: profit
+        type: sum
+        format: currency
+        title: Profit
+        description: Tổng lợi nhuận (USD), có thể âm
+        meta: { synonyms_vi: ["lợi nhuận", "lãi", "lỗ", "lời"] }
+      - name: profit_margin
+        sql: "1.0 * {total_profit} / NULLIF({total_sales}, 0)"
+        type: number
+        format: percent
+        title: Profit margin
+        description: Biên lợi nhuận = profit / sales
+        meta: { synonyms_vi: ["biên lợi nhuận", "tỷ suất lợi nhuận", "margin"] }
+      - name: total_quantity
+        sql: quantity
+        type: sum
+        title: Quantity
+        description: Tổng số lượng sản phẩm bán ra
+        meta: { synonyms_vi: ["số lượng", "sản lượng", "số món"] }
+      - name: order_count
+        sql: order_id
+        type: count_distinct
+        title: Orders
+        description: Số đơn hàng (không dùng được với pre-aggregation)
+        meta: { synonyms_vi: ["số đơn", "đơn hàng"] }
+      - name: customer_count
+        sql: customer_id
+        type: count_distinct
+        title: Customers
+        description: Số khách hàng khác nhau (không dùng được với pre-aggregation)
+        meta: { synonyms_vi: ["số khách", "khách hàng"] }
+      - name: avg_discount
+        sql: discount
+        type: avg
+        format: percent
+        description: Mức giảm giá trung bình trên order line (0..1)
+        meta: { synonyms_vi: ["giảm giá", "chiết khấu", "discount"] }
+      - name: avg_days_to_ship
+        sql: days_to_ship
+        type: avg
+        description: Số ngày giao hàng trung bình
+        meta: { synonyms_vi: ["thời gian giao hàng", "ship"] }
+      - name: line_count
+        type: count
+        description: Số order line
+
+    dimensions:
+      - name: row_id
+        sql: row_id
+        type: number
+        primary_key: true
+        public: false
+      - name: order_id
+        sql: order_id
+        type: string
+      - name: order_date
+        sql: order_date
+        type: time
+        description: Ngày đặt hàng
+        meta: { synonyms_vi: ["ngày đặt", "ngày", "tháng", "năm", "quý"] }
+      - name: ship_date
+        sql: ship_date
+        type: time
+        description: Ngày giao hàng
+      - name: ship_mode
+        sql: ship_mode
+        type: string
+        description: "Hình thức giao: Standard Class, Second Class, First Class, Same Day"
+      - name: segment
+        sql: segment
+        type: string
+        description: "Phân khúc khách hàng: Consumer, Corporate, Home Office"
+        meta: { synonyms_vi: ["phân khúc", "nhóm khách hàng"] }
+      - name: customer_name
+        sql: customer_name
+        type: string
+        meta: { synonyms_vi: ["tên khách hàng", "khách"] }
+      - name: region
+        sql: region
+        type: string
+        description: "Vùng: Central, East, South, West"
+        meta: { synonyms_vi: ["vùng", "miền", "khu vực"] }
+      - name: state
+        sql: state
+        type: string
+        description: Bang (Mỹ)
+        meta: { synonyms_vi: ["bang", "tiểu bang"] }
+      - name: city
+        sql: city
+        type: string
+        meta: { synonyms_vi: ["thành phố"] }
+      - name: category
+        sql: category
+        type: string
+        description: "Ngành hàng: Furniture, Office Supplies, Technology"
+        meta: { synonyms_vi: ["ngành hàng", "danh mục", "loại sản phẩm", "nội thất", "văn phòng phẩm", "công nghệ"] }
+      - name: sub_category
+        sql: sub_category
+        type: string
+        description: "Nhóm hàng con, vd Chairs, Phones, Binders"
+        meta: { synonyms_vi: ["nhóm hàng", "danh mục con"] }
+      - name: product_name
+        sql: product_name
+        type: string
+        meta: { synonyms_vi: ["sản phẩm", "tên sản phẩm", "mặt hàng"] }
+
+    pre_aggregations:
+      - name: daily_by_geo_category
+        measures: [total_sales, total_profit, total_quantity, line_count]
+        dimensions: [segment, region, state, category, sub_category, ship_mode]
+        time_dimension: order_date
+        granularity: day
+        partition_granularity: year
+        refresh_key:
+          every: 1 day
