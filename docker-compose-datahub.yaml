@@ -1,0 +1,230 @@
+# DataHub (metadata catalog + lineage), trimmed from the official v1.8.0
+# quickstart (docker/quickstart/docker-compose.quickstart-profile.yml):
+#   - no datahub-actions (only needed for UI-driven ingestion)
+#   - smaller heaps, internal-only ports for MySQL / OpenSearch / Kafka
+#   - joins data-platform-net so spark-master can reach http://datahub-gms:8080
+#
+# Start docker-compose.yml first (it creates the network), then:
+#   docker compose -f docker-compose-datahub.yaml up -d
+# UI: http://localhost:9002 (datahub / datahub)
+#
+# WARNING: local development only. Default secrets below are the public quickstart ones.
+name: datahub
+
+x-datahub-common-env: &datahub-common-env
+  DATAHUB_SYSTEM_CLIENT_SECRET: ${DATAHUB_SYSTEM_CLIENT_SECRET:-JohnSnowKnowsNothing}
+  DATAHUB_TOKEN_SERVICE_SALT: ${DATAHUB_TOKEN_SERVICE_SALT:?set DATAHUB_TOKEN_SERVICE_SALT in .env}
+  DATAHUB_TOKEN_SERVICE_SIGNING_KEY: ${DATAHUB_TOKEN_SERVICE_SIGNING_KEY:?set DATAHUB_TOKEN_SERVICE_SIGNING_KEY in .env}
+  EBEAN_DATASOURCE_DRIVER: com.mysql.jdbc.Driver
+  EBEAN_DATASOURCE_HOST: mysql:3306
+  EBEAN_DATASOURCE_USERNAME: root
+  EBEAN_DATASOURCE_PASSWORD: datahub
+  EBEAN_DATASOURCE_URL: jdbc:mysql://mysql:3306/datahub?verifyServerCertificate=false&useSSL=true&useUnicode=yes&characterEncoding=UTF-8&enabledTLSProtocols=TLSv1.2
+  ELASTICSEARCH_HOST: search
+  ELASTICSEARCH_PORT: '9200'
+  ELASTICSEARCH_PROTOCOL: http
+  ELASTICSEARCH_USE_SSL: 'false'
+  ELASTICSEARCH_IMPLEMENTATION: opensearch
+  ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX: 'true'
+  ELASTICSEARCH_INDEX_BUILDER_SETTINGS_REINDEX: 'true'
+  ENTITY_REGISTRY_CONFIG_PATH: /datahub/datahub-gms/resources/entity-registry.yml
+  ENTITY_VERSIONING_ENABLED: 'true'
+  GRAPH_SERVICE_IMPL: elasticsearch
+  KAFKA_BOOTSTRAP_SERVER: broker:29092
+  KAFKA_SCHEMAREGISTRY_URL: http://datahub-gms:8080/schema-registry/api/
+  SCHEMA_REGISTRY_TYPE: INTERNAL
+  VIEW_AUTHORIZATION_ENABLED: 'false'
+  ZDU_STAGE_10: 'true'
+  ZDU_STAGE_20: 'true'
+
+services:
+  mysql:
+    image: mysql:8.2
+    container_name: datahub-mysql
+    hostname: mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --default-authentication-plugin=caching_sha2_password
+    environment:
+      MYSQL_DATABASE: datahub
+      MYSQL_USER: datahub
+      MYSQL_PASSWORD: datahub
+      MYSQL_ROOT_PASSWORD: datahub
+      MYSQL_ROOT_HOST: '%'
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h mysql -u $$MYSQL_USER --password=$$MYSQL_PASSWORD"]
+      interval: 2s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: on-failure
+    volumes:
+      - datahub_mysqldata:/var/lib/mysql
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.3
+    container_name: datahub-opensearch
+    hostname: search
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: 'true'
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx768m -Dlog4j2.formatMsgNoLookups=true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --fail 'http://search:9200/_cluster/health?wait_for_status=yellow&timeout=0s'"]
+      interval: 5s
+      timeout: 15s
+      retries: 10
+      start_period: 1m
+    volumes:
+      - datahub_osdata:/usr/share/opensearch/data
+
+  kafka-broker:
+    image: confluentinc/cp-kafka:8.2.2
+    container_name: datahub-broker
+    hostname: broker
+    # KRaft single node: generate + format a cluster ID on first boot only
+    command:
+      - /bin/bash
+      - -c
+      - |
+        file_path="/var/lib/kafka/data/clusterID"
+        if [ ! -f "$$file_path" ]; then
+          /bin/kafka-storage random-uuid > $$file_path
+          kafka-storage format --ignore-formatted -t $$(cat "$$file_path") -c /etc/kafka/kafka.properties
+        fi
+        export CLUSTER_ID=$$(cat "$$file_path")
+        /etc/confluent/docker/run
+    environment:
+      KAFKA_NODE_ID: '1'
+      KAFKA_BROKER_ID: '1'
+      KAFKA_PROCESS_ROLES: controller, broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:39092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: BROKER://broker:29092,CONTROLLER://broker:39092
+      KAFKA_ADVERTISED_LISTENERS: BROKER://broker:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0'
+      KAFKA_MAX_MESSAGE_BYTES: '5242880'
+      KAFKA_MESSAGE_MAX_BYTES: '5242880'
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: 'false'
+      KAFKA_LOG4J_LOGGERS: org.apache.kafka.image.loader.MetadataLoader=WARN
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server broker:29092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 1m
+    volumes:
+      - datahub_broker:/var/lib/kafka/data
+
+  # One-shot job: creates MySQL tables, OpenSearch indices and Kafka topics
+  datahub-system-update:
+    image: acryldata/datahub-upgrade:${DATAHUB_VERSION:-v1.8.0}
+    container_name: datahub-system-update
+    hostname: datahub-system-update
+    command: ["-u", "SystemUpdate"]
+    environment:
+      <<: *datahub-common-env
+      BACKFILL_BROWSE_PATHS_V2: 'true'
+      REPROCESS_DEFAULT_BROWSE_PATHS_V2: 'false'
+      DATAHUB_GMS_HOST: datahub-gms
+      DATAHUB_GMS_PORT: '8080'
+      DATAHUB_PRECREATE_TOPICS: 'true'
+      DATAHUB_SQL_SETUP_ENABLED: 'true'
+      ELASTICSEARCH_BUILD_INDICES_CLONE_INDICES: 'false'
+      ELASTICSEARCH_INDEX_BUILDER_REFRESH_INTERVAL_SECONDS: '3'
+      PARTITIONS: '1'
+      SCHEMA_REGISTRY_SYSTEM_UPDATE: 'true'
+      SPRING_KAFKA_PROPERTIES_AUTO_REGISTER_SCHEMAS: 'true'
+      SPRING_KAFKA_PROPERTIES_USE_LATEST_VERSION: 'true'
+      USE_CONFLUENT_SCHEMA_REGISTRY: 'false'
+    depends_on:
+      mysql:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      kafka-broker:
+        condition: service_healthy
+
+  datahub-gms:
+    image: acryldata/datahub-gms:${DATAHUB_VERSION:-v1.8.0}
+    container_name: datahub-gms
+    hostname: datahub-gms
+    environment:
+      <<: *datahub-common-env
+      JAVA_OPTS: -Xms768m -Xmx1g
+      DATAHUB_SERVER_TYPE: quickstart
+      DATAHUB_TELEMETRY_ENABLED: 'false'
+      DATAHUB_OBJECT_STORAGE_URI: file:///tmp/datahub-object-storage
+      ALTERNATE_MCP_VALIDATION: 'true'
+      ENTITY_SERVICE_ENABLE_RETENTION: 'true'
+      ES_BULK_REFRESH_POLICY: NONE
+      GRAPH_SERVICE_DIFF_MODE_ENABLED: 'true'
+      MAE_CONSUMER_ENABLED: 'true'
+      MCE_CONSUMER_ENABLED: 'true'
+      PE_CONSUMER_ENABLED: 'true'
+      MCL_CONSUMER_BATCH_ENABLED: 'true'
+      MCP_CONSUMER_BATCH_ENABLED: 'true'
+      # Spark listener talks to GMS without a token; turn on + set
+      # spark.datahub.rest.token if this ever leaves localhost
+      METADATA_SERVICE_AUTH_ENABLED: 'false'
+      STRICT_URN_VALIDATION_ENABLED: 'true'
+      UI_INGESTION_ENABLED: 'false'
+      SERVER_SHUTDOWN_MODE: immediate
+    ports:
+      - "${DATAHUB_GMS_PORT:-8091}:8080"   # 8080 is taken by the Spark master UI
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --fail http://datahub-gms:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 1m30s
+    # First to get OOM-killed when Spark + Trino are busy on an 8 GB Docker VM
+    restart: unless-stopped
+    depends_on:
+      datahub-system-update:
+        condition: service_completed_successfully
+
+  datahub-frontend:
+    image: acryldata/datahub-frontend-react:${DATAHUB_VERSION:-v1.8.0}
+    container_name: datahub-frontend
+    hostname: datahub-frontend-react
+    environment:
+      DATAHUB_APP_VERSION: ${DATAHUB_VERSION:-v1.8.0}
+      DATAHUB_GMS_HOST: datahub-gms
+      DATAHUB_GMS_PORT: '8080'
+      DATAHUB_SECRET: ${DATAHUB_SECRET:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      DATAHUB_SYSTEM_CLIENT_SECRET: ${DATAHUB_SYSTEM_CLIENT_SECRET:-JohnSnowKnowsNothing}
+      DATAHUB_TRACKING_TOPIC: DataHubUsageEvent_v1
+      DATAHUB_PLAY_MEM_BUFFER_SIZE: 10MB
+      KAFKA_BOOTSTRAP_SERVER: broker:29092
+      ELASTIC_CLIENT_HOST: search
+      ELASTIC_CLIENT_PORT: '9200'
+      THEME_V2_DEFAULT: 'true'
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m -Dhttp.port=9002
+        -Dconfig.file=datahub-frontend/conf/application.conf
+        -Djava.security.auth.login.config=datahub-frontend/conf/jaas.conf
+        -Dlogback.configurationFile=datahub-frontend/conf/logback.xml
+        -Dlogback.debug=false -Dpidfile.path=/dev/null
+    ports:
+      - "${DATAHUB_FRONTEND_PORT:-9002}:9002"
+    depends_on:
+      datahub-gms:
+        condition: service_healthy
+
+volumes:
+  datahub_mysqldata:
+  datahub_osdata:
+  datahub_broker:
+
+# Joins the network created by docker-compose.yml so spark-master can emit
+# lineage to datahub-gms by service name.
+networks:
+  default:
+    name: data-platform-net
+    external: true

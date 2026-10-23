@@ -3,6 +3,9 @@ services:
     image: deltaio/delta-docker:4.3.1
     container_name: spark-master
     entrypoint: ["bash", "/opt/startup.sh"]
+    environment:
+      # Spark lineage -> DataHub (docker-compose-datahub.yaml). Set to empty in .env to disable.
+      DATAHUB_GMS_URL: ${DATAHUB_GMS_URL-http://datahub-gms:8080}
     stdin_open: true   # docker run -i
     tty: true          # docker run -t
     ports:
@@ -17,6 +20,8 @@ services:
       # so the driver gets its RustFS/S3A settings from here instead of a
       # wall of --conf spark.hadoop.fs.s3a.* flags in startup.sh.
       - ./hive-metastore/core-site.xml:/opt/spark/conf/core-site.xml:ro
+      # Driver-side only (lineage listener runs in the driver); executors keep Spark's defaults.
+      - ./spark/log4j2.properties:/opt/spark/conf/log4j2.properties:ro
       - ./demo:/opt/work
     working_dir: /opt
     depends_on:
@@ -107,6 +112,17 @@ services:
       metastore-db:
         condition: service_healthy
 
+  # Trino -> DataHub lineage: renames OpenLineage jobs to one job per output table (see relay.py)
+  lineage-relay:
+    image: python:3.12-alpine
+    container_name: lineage-relay
+    command: python /app/relay.py
+    environment:
+      DATAHUB_OPENLINEAGE_URL: ${DATAHUB_OPENLINEAGE_URL:-http://datahub-gms:8080/openapi/openlineage/api/v1/lineage}
+    volumes:
+      - ./trino/lineage-relay/relay.py:/app/relay.py:ro
+    restart: unless-stopped
+
   trino:
     image: trinodb/trino:${TRINO_VERSION:-latest}
     container_name: trino
@@ -123,6 +139,7 @@ services:
       - ./trino/catalog:/etc/trino/catalog:ro
       - ./trino/etc/jvm.config:/etc/trino/jvm.config:ro
       - ./trino/etc/config.properties:/etc/trino/config.properties:ro
+      - ./trino/etc/openlineage-event-listener.properties:/etc/trino/openlineage-event-listener.properties:ro
     # Without a limit the JVM sizes its heap at 80% of the whole Docker VM and gets OOM-killed
     mem_limit: 3g
     restart: unless-stopped

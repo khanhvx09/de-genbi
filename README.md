@@ -188,6 +188,25 @@ streamlit run app/app.py
 
 Nếu chạy local thì có thể tắt container `genbi` để khỏi trùng cổng 8501: `docker compose stop genbi`.
 
+### Bước 7 — DataHub + lineage cho Spark (tuỳ chọn)
+
+DataHub nằm trong compose riêng, join mạng `data-platform-net` (chạy bước 2 trước). Cần thêm ~3 GB RAM
+cho Docker (GMS, OpenSearch, Kafka, MySQL, frontend).
+
+```bash
+# Sinh 2 secret bắt buộc vào .env (một lần)
+echo "DATAHUB_TOKEN_SERVICE_SALT=$(openssl rand -hex 32)" >> .env
+echo "DATAHUB_TOKEN_SERVICE_SIGNING_KEY=$(openssl rand -hex 32)" >> .env
+
+docker compose -f docker-compose-datahub.yaml up -d
+docker compose up -d --force-recreate spark-master   # nạp lại listener
+```
+
+`startup.sh` tự gắn `io.acryl:acryl-spark-lineage_2.13` + `DatahubSparkListener` khi `DATAHUB_GMS_URL`
+có giá trị (mặc định `http://datahub-gms:8080`; đặt rỗng trong `.env` để tắt). Mỗi query ghi dữ liệu
+trong Jupyter được đẩy lên DataHub ngay (`spark.datahub.coalesce_jobs=false`) — xem ở
+http://localhost:9002 → Pipelines → `spark`.
+
 ---
 
 ## 4. Dùng ứng dụng
@@ -217,6 +236,8 @@ Nếu chạy local thì có thể tắt container `genbi` để khỏi trùng c�
 | Jupyter Lab | http://localhost:8888 | token xem ở `docker compose logs spark-master` |
 | Postgres (`metastore-db`) | `localhost:5432` | `hive`/`hive` (DB `hive`), `agent`/`agent`, `airflow`/`airflow` |
 | Hive Metastore (thrift) | `localhost:9083` | — |
+| DataHub UI | http://localhost:9002 | `datahub` / `datahub` |
+| DataHub GMS (REST/GraphQL) | http://localhost:8091 | — (chưa bật auth) |
 
 Xem query đang/đã chạy trên Trino: http://localhost:8085 (tab Query History) hoặc
 `docker compose exec trino trino --execute "SELECT query_id, state, query FROM system.runtime.queries ORDER BY created DESC LIMIT 10"`.
