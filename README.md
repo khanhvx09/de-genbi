@@ -1,4 +1,4 @@
-# Telco-DE-GenBI — Chat with your data through Cube (semantic layer)
+# Lakehouse LLM Analytics — Chat with your data through Cube (semantic layer)
 
 Ask questions about your data in natural language, with conversational memory, and get back **tables + charts**.
 Every number goes through the **semantic layer (Cube Core)** — the LLM never writes SQL itself, it only picks

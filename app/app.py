@@ -15,7 +15,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
 
 from agent import ask, build_agent, make_memory  # noqa: E402  (sau load_dotenv)
 
-st.set_page_config(page_title="Superstore GenBI", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Superstore LLM Analytics", page_icon="📊", layout="wide")
 
 
 @st.cache_resource
@@ -25,7 +25,7 @@ def get_agent():
 
 
 with st.sidebar:
-    st.header("Superstore GenBI")
+    st.header("Superstore LLM Analytics")
     user_id = st.text_input("User", value="kevin")
     if "thread_id" not in st.session_state or st.button("New conversation"):
         st.session_state.thread_id = str(uuid.uuid4())

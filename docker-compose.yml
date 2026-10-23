@@ -200,9 +200,9 @@ services:
         condition: service_healthy
 
   # Agent + UI in a single Streamlit app (app/app.py); run locally: streamlit run app/app.py
-  genbi:
+  lakehouse-llm-analytics:
     build: ./app
-    container_name: genbi
+    container_name: lakehouse-llm-analytics
     ports:
       - "8501:8501"
     env_file: [.env]

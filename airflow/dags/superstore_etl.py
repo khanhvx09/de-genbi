@@ -42,7 +42,7 @@ with DAG(
     start_date=pendulum.datetime(2026, 10, 1, tz="Asia/Singapore"),
     schedule=None,              # static dataset -> manual trigger
     catchup=False,
-    tags=["superstore", "genbi", "dbt"],
+    tags=["superstore", "llm-analytics", "dbt"],
 ) as dag:
     download = PythonOperator(
         task_id="download_superstore_to_s3",
