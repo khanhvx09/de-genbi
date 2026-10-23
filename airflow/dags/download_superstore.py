@@ -1,22 +1,22 @@
 """
-Tải dataset Kaggle "Superstore Dataset" (vivek468/superstore-dataset-final) bằng kagglehub
-rồi đẩy lên RustFS (S3-compatible): s3://<bucket>/raw/superstore/superstore.csv
+Download the Kaggle "Superstore Dataset" (vivek468/superstore-dataset-final) with kagglehub
+then push it to RustFS (S3-compatible): s3://<bucket>/raw/superstore/superstore.csv
 
-1 file CSV có header, ~10k dòng order line, 21 cột:
+One CSV file with a header, ~10k order-line rows, 21 columns:
   Row ID, Order ID, Order Date, Ship Date, Ship Mode, Customer ID, Customer Name, Segment,
   Country, City, State, Postal Code, Region, Product ID, Category, Sub-Category, Product Name,
   Sales, Quantity, Discount, Profit
-File gốc encode Windows-1252 -> đổi sang UTF-8 trước khi upload để Trino đọc đúng.
+The source file is encoded in Windows-1252 -> converted to UTF-8 before upload so Trino reads it correctly.
 
-Gọi từ DAG:
+Called from the DAG:
   from download_superstore import download_to_s3
   PythonOperator(task_id="download_superstore", python_callable=download_to_s3)
 
-Chạy tay (ngoài Docker, RustFS publish ở localhost:9000):
+Run by hand (outside Docker, RustFS published on localhost:9000):
   S3_ENDPOINT=http://localhost:9000 python airflow/dags/download_superstore.py
 
-Cấu hình qua env: S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION, LAKE_BUCKET.
-Dataset public; nếu Kaggle đòi đăng nhập thì đặt KAGGLE_USERNAME + KAGGLE_KEY.
+Configured via env: S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION, LAKE_BUCKET.
+The dataset is public; if Kaggle asks for login set KAGGLE_USERNAME + KAGGLE_KEY.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def s3_client() -> BaseClient:
         aws_access_key_id=os.getenv("S3_ACCESS_KEY", "rustfsadmin"),
         aws_secret_access_key=os.getenv("S3_SECRET_KEY", "rustfsadmin"),
         region_name=os.getenv("S3_REGION", "us-east-1"),
-        # RustFS mặc định chỉ hỗ trợ path-style (http://host/bucket/key)
+        # RustFS only supports path-style by default (http://host/bucket/key)
         config=Config(s3={"addressing_style": "path"}),
     )
 
@@ -66,7 +66,7 @@ def ensure_bucket(s3: BaseClient, bucket: str) -> None:
 def find_csv(dataset_dir: str) -> Path:
     csvs = sorted(Path(dataset_dir).rglob("*.csv"))
     if len(csvs) != 1:
-        raise RuntimeError(f"Cần đúng 1 file CSV trong {dataset_dir}, thấy {len(csvs)}: {csvs}")
+        raise RuntimeError(f"Expected exactly 1 CSV file in {dataset_dir}, found {len(csvs)}: {csvs}")
     return csvs[0]
 
 
@@ -76,13 +76,13 @@ def to_utf8(raw: bytes) -> bytes:
             return raw.decode(enc).encode("utf-8")
         except UnicodeDecodeError:
             continue
-    raise RuntimeError(f"Không decode được file với {SOURCE_ENCODINGS}")
+    raise RuntimeError(f"Could not decode the file with {SOURCE_ENCODINGS}")
 
 
 def download_to_s3(bucket: str | None = None, prefix: str = DEFAULT_PREFIX) -> str:
     """
-    Tải bản mới nhất từ Kaggle (kagglehub cache cục bộ) rồi ghi đè s3://<bucket>/<prefix>/superstore.csv.
-    Idempotent: chạy lại chỉ ghi đè cùng 1 object. Trả về key (vào XCom khi chạy trong DAG).
+    Download the latest copy from Kaggle (kagglehub local cache) then overwrite s3://<bucket>/<prefix>/superstore.csv.
+    Idempotent: re-running only overwrites the same object. Returns the key (to XCom when run in the DAG).
     """
     bucket = bucket or os.getenv("LAKE_BUCKET", "lakehouse")
     key = f"{prefix.strip('/')}/{OBJECT_NAME}"
@@ -100,7 +100,7 @@ def download_to_s3(bucket: str | None = None, prefix: str = DEFAULT_PREFIX) -> s
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bucket", default=None, help="mặc định $LAKE_BUCKET hoặc 'lakehouse'")
+    ap.add_argument("--bucket", default=None, help="defaults to $LAKE_BUCKET or 'lakehouse'")
     ap.add_argument("--prefix", default=DEFAULT_PREFIX)
     args = ap.parse_args()
 
@@ -108,7 +108,7 @@ def main() -> int:
     try:
         download_to_s3(bucket=args.bucket, prefix=args.prefix)
     except (ClientError, RuntimeError, OSError) as e:
-        log.error("lỗi: %s", e)
+        log.error("error: %s", e)
         return 1
     return 0
 

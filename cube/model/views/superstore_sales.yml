@@ -1,10 +1,10 @@
-# View là "bề mặt" duy nhất agent và Superset được thấy.
+# The view is the only surface the agent and Superset get to see.
 views:
   - name: superstore_sales
     title: Superstore sales
     description: >
-      Doanh thu, lợi nhuận, số lượng, đơn hàng của chuỗi bán lẻ Superstore tại Mỹ,
-      đơn hàng 2014–2017, theo thời gian, vùng/bang/thành phố, phân khúc khách hàng và ngành hàng. Tiền tệ USD.
+      Revenue, profit, quantity and orders of the Superstore US retail chain,
+      orders 2014–2017, by time, region/state/city, customer segment and product category. Currency USD.
     cubes:
       - join_path: sales
         includes: "*"

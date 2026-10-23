@@ -10,6 +10,6 @@ langgraph>=1.0,<2
 langchain-community>=0.4.2
 langchain-openai
 langchain-anthropic
-# Chỉ cần khi set AGENT_DB_URI (trí nhớ bền qua restart)
+# Only needed when AGENT_DB_URI is set (memory persisted across restarts)
 langgraph-checkpoint-postgres>=2.0
 psycopg[binary,pool]>=3.2

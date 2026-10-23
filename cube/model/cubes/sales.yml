@@ -1,11 +1,11 @@
 cubes:
   - name: sales
     sql_table: delta.gold.sales
-    title: Doanh số Superstore
+    title: Superstore sales
     description: >
-      Kaggle Superstore — chuỗi bán lẻ đồ nội thất, văn phòng phẩm, thiết bị công nghệ tại Mỹ,
-      đơn hàng từ 03/01/2014 → 30/12/2017. Mỗi dòng = 1 order line (1 sản phẩm trong 1 đơn hàng).
-      Tiền tệ USD.
+      Kaggle Superstore — a US retail chain selling furniture, office supplies and technology,
+      orders from 2014-01-03 to 2017-12-30. One row = one order line (one product in one order).
+      Currency USD.
 
     measures:
       - name: total_sales
@@ -13,54 +13,54 @@ cubes:
         type: sum
         format: currency
         title: Sales
-        description: Tổng doanh thu (USD, đã trừ giảm giá)
-        meta: { synonyms_vi: ["doanh thu", "doanh số", "revenue", "bán được"] }
+        description: Total revenue (USD, after discounts)
+        meta: { synonyms: ["revenue", "sales", "turnover", "sold"] }
       - name: total_profit
         sql: profit
         type: sum
         format: currency
         title: Profit
-        description: Tổng lợi nhuận (USD), có thể âm
-        meta: { synonyms_vi: ["lợi nhuận", "lãi", "lỗ", "lời"] }
+        description: Total profit (USD), can be negative
+        meta: { synonyms: ["profit", "earnings", "loss", "gain"] }
       - name: profit_margin
         sql: "1.0 * {total_profit} / NULLIF({total_sales}, 0)"
         type: number
         format: percent
         title: Profit margin
-        description: Biên lợi nhuận = profit / sales
-        meta: { synonyms_vi: ["biên lợi nhuận", "tỷ suất lợi nhuận", "margin"] }
+        description: Profit margin = profit / sales
+        meta: { synonyms: ["profit margin", "margin", "profitability"] }
       - name: total_quantity
         sql: quantity
         type: sum
         title: Quantity
-        description: Tổng số lượng sản phẩm bán ra
-        meta: { synonyms_vi: ["số lượng", "sản lượng", "số món"] }
+        description: Total units sold
+        meta: { synonyms: ["quantity", "units", "volume"] }
       - name: order_count
         sql: order_id
         type: count_distinct
         title: Orders
-        description: Số đơn hàng (không dùng được với pre-aggregation)
-        meta: { synonyms_vi: ["số đơn", "đơn hàng"] }
+        description: Number of orders (not usable with pre-aggregation)
+        meta: { synonyms: ["orders", "order count", "number of orders"] }
       - name: customer_count
         sql: customer_id
         type: count_distinct
         title: Customers
-        description: Số khách hàng khác nhau (không dùng được với pre-aggregation)
-        meta: { synonyms_vi: ["số khách", "khách hàng"] }
+        description: Number of distinct customers (not usable with pre-aggregation)
+        meta: { synonyms: ["customers", "customer count", "buyers"] }
       - name: avg_discount
         sql: discount
         type: avg
         format: percent
-        description: Mức giảm giá trung bình trên order line (0..1)
-        meta: { synonyms_vi: ["giảm giá", "chiết khấu", "discount"] }
+        description: Average discount per order line (0..1)
+        meta: { synonyms: ["discount", "markdown", "price cut"] }
       - name: avg_days_to_ship
         sql: days_to_ship
         type: avg
-        description: Số ngày giao hàng trung bình
-        meta: { synonyms_vi: ["thời gian giao hàng", "ship"] }
+        description: Average number of days to ship
+        meta: { synonyms: ["shipping time", "delivery time", "ship"] }
       - name: line_count
         type: count
-        description: Số order line
+        description: Number of order lines
 
     dimensions:
       - name: row_id
@@ -74,53 +74,53 @@ cubes:
       - name: order_date
         sql: order_date
         type: time
-        description: Ngày đặt hàng
-        meta: { synonyms_vi: ["ngày đặt", "ngày", "tháng", "năm", "quý"] }
+        description: Order date
+        meta: { synonyms: ["order date", "date", "month", "year", "quarter"] }
       - name: ship_date
         sql: ship_date
         type: time
-        description: Ngày giao hàng
+        description: Ship date
       - name: ship_mode
         sql: ship_mode
         type: string
-        description: "Hình thức giao: Standard Class, Second Class, First Class, Same Day"
+        description: "Shipping method: Standard Class, Second Class, First Class, Same Day"
       - name: segment
         sql: segment
         type: string
-        description: "Phân khúc khách hàng: Consumer, Corporate, Home Office"
-        meta: { synonyms_vi: ["phân khúc", "nhóm khách hàng"] }
+        description: "Customer segment: Consumer, Corporate, Home Office"
+        meta: { synonyms: ["segment", "customer group"] }
       - name: customer_name
         sql: customer_name
         type: string
-        meta: { synonyms_vi: ["tên khách hàng", "khách"] }
+        meta: { synonyms: ["customer name", "customer"] }
       - name: region
         sql: region
         type: string
-        description: "Vùng: Central, East, South, West"
-        meta: { synonyms_vi: ["vùng", "miền", "khu vực"] }
+        description: "Region: Central, East, South, West"
+        meta: { synonyms: ["region", "area", "territory"] }
       - name: state
         sql: state
         type: string
-        description: Bang (Mỹ)
-        meta: { synonyms_vi: ["bang", "tiểu bang"] }
+        description: US state
+        meta: { synonyms: ["state"] }
       - name: city
         sql: city
         type: string
-        meta: { synonyms_vi: ["thành phố"] }
+        meta: { synonyms: ["city", "town"] }
       - name: category
         sql: category
         type: string
-        description: "Ngành hàng: Furniture, Office Supplies, Technology"
-        meta: { synonyms_vi: ["ngành hàng", "danh mục", "loại sản phẩm", "nội thất", "văn phòng phẩm", "công nghệ"] }
+        description: "Product category: Furniture, Office Supplies, Technology"
+        meta: { synonyms: ["category", "product type", "furniture", "office supplies", "technology"] }
       - name: sub_category
         sql: sub_category
         type: string
-        description: "Nhóm hàng con, vd Chairs, Phones, Binders"
-        meta: { synonyms_vi: ["nhóm hàng", "danh mục con"] }
+        description: "Product sub-category, e.g. Chairs, Phones, Binders"
+        meta: { synonyms: ["sub-category", "product group"] }
       - name: product_name
         sql: product_name
         type: string
-        meta: { synonyms_vi: ["sản phẩm", "tên sản phẩm", "mặt hàng"] }
+        meta: { synonyms: ["product", "product name", "item"] }
 
     pre_aggregations:
       - name: daily_by_geo_category

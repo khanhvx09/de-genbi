@@ -1,6 +1,6 @@
 {#
-  Ghi đè dbt-trino: tạo schema kèm location trên RustFS.
-  Không có location, Hive Metastore gán warehouse cục bộ (file:/...) và Trino không ghi được.
+  Overrides dbt-trino: create the schema with a location on RustFS.
+  Without a location, Hive Metastore assigns a local warehouse (file:/...) and Trino cannot write.
   delta.silver -> s3://lakehouse/silver/, delta.gold -> s3://lakehouse/gold/.
 #}
 {% macro trino__create_schema(relation) -%}

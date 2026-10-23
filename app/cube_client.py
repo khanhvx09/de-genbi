@@ -16,7 +16,7 @@ _meta_cache: dict = {"at": 0.0, "data": None}
 
 
 def make_token(user_id: str) -> str:
-    # security context -> Cube có thể dùng cho row-level security (queryRewrite) về sau
+    # security context -> Cube can use it for row-level security (queryRewrite) later
     payload = {"sub": user_id, "user_id": user_id, "exp": int(time.time()) + 3600}
     return jwt.encode(payload, CUBE_SECRET, algorithm="HS256")
 
@@ -35,7 +35,7 @@ def get_meta(user_id: str = "agent", ttl: int = 300) -> dict:
 
 
 def public_members(user_id: str = "agent") -> dict[str, dict]:
-    """Chỉ lấy member của *views* (bề mặt đã curate). Fallback sang cubes nếu chưa có view."""
+    """Only take members of *views* (the curated surface). Fall back to cubes if there are no views."""
     meta = get_meta(user_id)
     items = meta.get("cubes", [])
     views = [c for c in items if c.get("type") == "view"] or items
@@ -50,7 +50,7 @@ def public_members(user_id: str = "agent") -> dict[str, dict]:
                     "type": m.get("type"),
                     "title": m.get("shortTitle") or m.get("title"),
                     "description": m.get("description", ""),
-                    "synonyms": (m.get("meta") or {}).get("synonyms_vi", []),
+                    "synonyms": (m.get("meta") or {}).get("synonyms", []),
                     "view": c["name"],
                     "view_description": c.get("description", ""),
                 }
@@ -58,7 +58,7 @@ def public_members(user_id: str = "agent") -> dict[str, dict]:
 
 
 def load(query: dict, user_id: str = "agent", max_wait_s: int = 120) -> dict:
-    """POST /load, tự retry khi Cube trả 'Continue wait' (query dài / đang build pre-agg)."""
+    """POST /load, retrying automatically when Cube returns 'Continue wait' (long query / building pre-agg)."""
     query = {"timezone": DEFAULT_TZ, **query}
     deadline = time.time() + max_wait_s
     while True:
@@ -67,7 +67,7 @@ def load(query: dict, user_id: str = "agent", max_wait_s: int = 120) -> dict:
         body = r.json()
         if body.get("error") == "Continue wait":
             if time.time() > deadline:
-                raise TimeoutError("Cube query vẫn đang chạy quá lâu")
+                raise TimeoutError("Cube query is still running after the timeout")
             time.sleep(1.5)
             continue
         if r.status_code >= 400 or "error" in body:

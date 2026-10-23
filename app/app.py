@@ -1,4 +1,4 @@
-"""Chat UI tối giản: hỏi đáp + bảng + biểu đồ + xem query/SQL Cube sinh ra."""
+"""Minimal chat UI: Q&A + table + chart + the Cube query/SQL that was generated."""
 import logging
 import os
 import uuid
@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 
-load_dotenv()  # chạy local: đọc OPENAI_API_KEY... từ .env (trong docker đã có env_file)
+load_dotenv()  # local run: read OPENAI_API_KEY... from .env (docker already has env_file)
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -27,15 +27,15 @@ def get_agent():
 with st.sidebar:
     st.header("Superstore GenBI")
     user_id = st.text_input("User", value="kevin")
-    if "thread_id" not in st.session_state or st.button("Hội thoại mới"):
+    if "thread_id" not in st.session_state or st.button("New conversation"):
         st.session_state.thread_id = str(uuid.uuid4())
         st.session_state.history = []
     st.caption(f"thread: `{st.session_state.thread_id[:8]}`")
-    st.markdown("**Gợi ý câu hỏi**\n"
-                "- Vùng nào có doanh thu cao nhất năm 2017?\n"
-                "- Vẽ xu hướng doanh thu theo tháng\n"
-                "- Biên lợi nhuận theo ngành hàng và phân khúc khách hàng\n"
-                "- Top 10 sản phẩm lỗ nhiều nhất")
+    st.markdown("**Suggested questions**\n"
+                "- Which region has the highest revenue in 2017?\n"
+                "- Plot the monthly revenue trend\n"
+                "- Profit margin by category and customer segment\n"
+                "- Top 10 most loss-making products")
 
 
 def short(col: str) -> str:
@@ -45,10 +45,10 @@ def short(col: str) -> str:
 def render_result(r: dict, key: str):
     rows = r.get("rows", [])
     if not rows:
-        st.info("Query không trả về dòng nào.")
+        st.info("The query returned no rows.")
         return
     df = pd.DataFrame(rows).rename(columns=short)
-    for c in df.columns:  # Cube trả số dạng string
+    for c in df.columns:  # Cube returns numbers as strings
         try:
             df[c] = pd.to_numeric(df[c])
         except (ValueError, TypeError):
@@ -77,16 +77,16 @@ for turn_idx, turn in enumerate(st.session_state.history):
         for res_idx, r in enumerate(turn.get("results", [])):
             render_result(r, key=f"{st.session_state.thread_id}-{turn_idx}-{res_idx}")
 
-if prompt := st.chat_input("Hỏi về dữ liệu…"):
+if prompt := st.chat_input("Ask about the data…"):
     st.session_state.history.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Đang truy vấn semantic layer…"):
+        with st.spinner("Querying the semantic layer…"):
             try:
                 data = ask(get_agent(), prompt, st.session_state.thread_id, user_id)
             except Exception as e:
-                data = {"answer": f"⚠️ Lỗi gọi agent: {e}", "results": []}
+                data = {"answer": f"⚠️ Agent call failed: {e}", "results": []}
         st.markdown(data["answer"])
         assistant_idx = len(st.session_state.history)  # index the turn will have once appended
         for res_idx, r in enumerate(data.get("results", [])):

@@ -1,7 +1,7 @@
 """
-Chạy golden set qua agent (gọi trực tiếp, không cần server) và chấm điểm theo các member Cube mà agent đã dùng.
+Run the golden set through the agent (called directly, no server needed) and score by the Cube members the agent used.
   python evals/run_evals.py
-Đây là "query-shape accuracy". Bước sau: so kết quả số với query chuẩn (execution accuracy).
+This is "query-shape accuracy". Next step: compare numeric results with a reference query (execution accuracy).
 """
 import argparse
 import pathlib

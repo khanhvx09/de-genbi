@@ -1,8 +1,8 @@
 {#
-  Bronze = file CSV thô trên RustFS. Khai báo external table (Hive connector) đọc thẳng prefix raw,
-  không copy dữ liệu. Idempotent; chạy ở on-run-start nên `dbt build` tự lo.
-  Format CSV của Hive (OpenCSVSerde) hiểu field có dấu "..." chứa dấu phẩy và bắt buộc mọi cột varchar
-  -> ép kiểu ở silver bằng try_cast, dòng lỗi không làm hỏng cả job.
+  Bronze = raw CSV file on RustFS. Declares an external table (Hive connector) reading the raw prefix directly,
+  without copying data. Idempotent; runs in on-run-start so `dbt build` handles it.
+  Hive's CSV format (OpenCSVSerde) understands "..." fields containing commas and forces every column to varchar
+  -> cast in silver with try_cast, so a bad row does not break the whole job.
 #}
 {% macro create_bronze() %}
   {% set catalog = var('bronze_catalog') %}

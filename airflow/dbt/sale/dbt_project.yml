@@ -1,8 +1,8 @@
-# Medallion trên Trino, mỗi layer 1 schema:
-#   bronze : hive.bronze.superstore_raw (catalog `hive`, CSV nên cần Hive connector) — file CSV thô trên RustFS (s3://lakehouse/raw/superstore) do task
-#            download_superstore_to_s3 đẩy lên; macro create_bronze tạo external table
-#   silver : delta.silver.superstore_orders — typed (catalog `delta`, Delta Lake), dedup, parse ngày
-#   gold   : delta.gold.sales — Cube đọc trực tiếp
+# Medallion on Trino, one schema per layer:
+#   bronze : hive.bronze.superstore_raw (catalog `hive`, CSV so it needs the Hive connector) — raw CSV file on RustFS (s3://lakehouse/raw/superstore) pushed by task
+#            download_superstore_to_s3; macro create_bronze creates the external table
+#   silver : delta.silver.superstore_orders — typed (catalog `delta`, Delta Lake), dedup, parsed dates
+#   gold   : delta.gold.sales — read directly by Cube
 name: 'sale'
 version: '1.0.0'
 profile: 'sale'
@@ -19,10 +19,10 @@ clean-targets:
   - "dbt_packages"
 
 vars:
-  lake_root: "s3://lakehouse"              # schema <catalog>.<x> nằm ở <lake_root>/<x>/
+  lake_root: "s3://lakehouse"              # schema <catalog>.<x> lives at <lake_root>/<x>/
   raw_superstore_location: "s3://lakehouse/raw/superstore"
   bronze_schema: "bronze"
-  bronze_catalog: "hive"                  # bronze là CSV external table -> chỉ Hive connector tạo được; silver/gold dùng catalog mặc định (delta) ở profiles.yml
+  bronze_catalog: "hive"                  # bronze is a CSV external table -> only the Hive connector can create it; silver/gold use the default catalog (delta) from profiles.yml
 
 on-run-start:
   - "{{ create_bronze() }}"
@@ -30,7 +30,7 @@ on-run-start:
 models:
   sale:
     +materialized: table
-    # Delta connector hỗ trợ CREATE OR REPLACE TABLE
+    # The Delta connector supports CREATE OR REPLACE TABLE
     +on_table_exists: replace
     silver:
       +schema: silver

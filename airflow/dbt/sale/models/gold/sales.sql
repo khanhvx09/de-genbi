@@ -1,4 +1,4 @@
--- fact cho Cube: 1 dòng = 1 order line, denormalized (khách hàng, địa lý, sản phẩm) để Cube đọc 1 bảng
+-- fact for Cube: 1 row = 1 order line, denormalized (customer, geography, product) so Cube reads a single table
 SELECT
     row_id,
     order_id,

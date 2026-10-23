@@ -1,37 +1,37 @@
-# Golden set: câu hỏi -> các member Cube BẮT BUỘC phải xuất hiện trong query agent sinh ra.
-# Mở rộng dần bằng câu hỏi thật của người dùng. Mỗi lần agent sai 2 lần cùng kiểu -> thêm 1 case.
+# Golden set: question -> Cube members that MUST appear in the query the agent generates.
+# Grow it with real user questions. Each time the agent gets the same kind of question wrong twice -> add a case.
 - id: q01
-  question: Vùng nào có doanh thu cao nhất trong năm 2017?
+  question: Which region had the highest revenue in 2017?
   must_include: [superstore_sales.total_sales, superstore_sales.region]
   date_range: ["2017-01-01", "2017-12-31"]
 - id: q02
-  question: Vẽ xu hướng doanh thu theo tháng
+  question: Plot the monthly revenue trend
   must_include: [superstore_sales.total_sales, superstore_sales.order_date]
   granularity: month
 - id: q03
-  question: Ngành hàng nào có biên lợi nhuận thấp nhất?
+  question: Which category has the lowest profit margin?
   must_include: [superstore_sales.profit_margin, superstore_sales.category]
 - id: q04
-  question: So sánh lợi nhuận giữa các phân khúc khách hàng
+  question: Compare profit across customer segments
   must_include: [superstore_sales.total_profit, superstore_sales.segment]
 - id: q05
-  question: Top 10 sản phẩm lỗ nhiều nhất
+  question: Top 10 most loss-making products
   must_include: [superstore_sales.total_profit, superstore_sales.product_name]
   limit: 10
 - id: q06
   question: What was the profit margin of Technology in the West region?
   must_include: [superstore_sales.profit_margin, superstore_sales.category, superstore_sales.region]
 - id: q07
-  question: Doanh thu nội thất theo quý
+  question: Furniture revenue by quarter
   must_include: [superstore_sales.total_sales, superstore_sales.category, superstore_sales.order_date]
   granularity: quarter
 - id: q08
-  question: Có bao nhiêu đơn hàng trong năm 2016?
+  question: How many orders were placed in 2016?
   must_include: [superstore_sales.order_count]
 - id: q09
-  question: Lưu lượng data 4G tháng 11 là bao nhiêu?   # không có metric -> agent phải từ chối đúng cách
+  question: What was the 4G data traffic in November?   # no such metric -> the agent must decline properly
   must_include: []
   expect_no_query: true
 - id: q10
-  question: Bang nào có mức giảm giá trung bình cao nhất?
+  question: Which state has the highest average discount?
   must_include: [superstore_sales.avg_discount, superstore_sales.state]

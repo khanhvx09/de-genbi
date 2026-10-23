@@ -46,7 +46,7 @@ services:
       - "4041:4040"    # Spark driver UI (cluster-mode driver lands here — single worker)
 
   rustfs:
-    # RustFS: object storage tương thích S3 (Rust). Chỉ hỗ trợ path-style -> client phải bật path-style.
+    # RustFS: S3-compatible object storage (Rust). Path-style only -> clients must enable path-style.
     image: rustfs/rustfs:${RUSTFS_VERSION:-1.0.1}
     container_name: rustfs
     hostname: rustfs
@@ -199,7 +199,7 @@ services:
       trino:
         condition: service_healthy
 
-  # Agent + UI trong một app Streamlit (app/app.py); chạy local: streamlit run app/app.py
+  # Agent + UI in a single Streamlit app (app/app.py); run locally: streamlit run app/app.py
   genbi:
     build: ./app
     container_name: genbi
@@ -209,7 +209,7 @@ services:
     environment:
       CUBE_API_URL: http://cube:4000/cubejs-api/v1
       CUBEJS_API_SECRET: ${CUBEJS_API_SECRET:-dev-secret-change-me}
-      # Bỏ comment để trí nhớ bền qua restart (mặc định in-memory):
+      # Uncomment to persist memory across restarts (default in-memory):
       # AGENT_DB_URI: postgresql://agent:agent@metastore-db:5432/agent
     depends_on:
       - cube

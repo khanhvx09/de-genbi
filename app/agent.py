@@ -1,6 +1,6 @@
-"""LangGraph agent: hỏi đáp dữ liệu qua Cube, có trí nhớ ngắn hạn (thread) và dài hạn (user notes).
+"""LangGraph agent: answers data questions through Cube, with short-term (thread) and long-term (user notes) memory.
 
-Chạy trực tiếp trong process Streamlit — `ask()` là điểm vào duy nhất."""
+Runs inside the Streamlit process — `ask()` is the only entry point."""
 from __future__ import annotations
 
 import contextvars
@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 MAX_ROWS_TO_LLM = 50
 DEFAULT_TOP_K = 10
 MAX_TOP_K = 30
-DEFAULT_LLM = "openai:gpt-4.1"  # đổi qua env LLM_MODEL, vd anthropic:claude-sonnet-5-5
+DEFAULT_LLM = "openai:gpt-4.1"  # override via env LLM_MODEL, e.g. anthropic:claude-sonnet-5-5
 RECURSION_LIMIT = 25
 
-# Kết quả query của request hiện tại -> API trả cho UI để vẽ bảng/biểu đồ.
+# Query results of the current request -> returned by the API so the UI can draw tables/charts.
 current_results: contextvars.ContextVar[list] = contextvars.ContextVar("current_results")
 
 
@@ -39,7 +39,7 @@ class UserContext:
 
 
 class Filter(BaseModel):
-    member: str = Field(description="Tên đầy đủ, vd superstore_sales.region")
+    member: str = Field(description="Full name, e.g. superstore_sales.region")
     operator: Literal["equals", "notEquals", "contains", "notContains", "gt", "gte", "lt", "lte",
                       "set", "notSet", "inDateRange", "beforeDate", "afterDate"]
     values: list[str] = Field(default_factory=list)
@@ -49,7 +49,7 @@ class TimeDim(BaseModel):
     dimension: str = Field(description="vd superstore_sales.order_date")
     granularity: Literal["day", "week", "month", "quarter", "year"] | None = None
     date_range: list[str] | None = Field(
-        default=None, description='["2017-01-01","2017-12-31"] hoặc null')
+        default=None, description='["2017-01-01","2017-12-31"] or null')
 
 
 def _check_members(names: list[str]) -> list[str]:
@@ -59,13 +59,13 @@ def _check_members(names: list[str]) -> list[str]:
 
 @tool
 def search_semantic_layer(query: str, k: int = DEFAULT_TOP_K) -> str:
-    """Tìm các measure (chỉ số) và dimension (chiều phân tích) liên quan tới câu hỏi, kèm mô tả.
-    `query` là cụm từ mô tả thứ cần tìm, vd "doanh thu theo vùng"."""
+    """Find the measures and dimensions relevant to the question, with descriptions.
+    `query` is a phrase describing what to look for, e.g. "revenue by region"."""
     try:
         docs = semantic_index.search(query, k=min(max(k, 1), MAX_TOP_K))
     except Exception as e:
         logger.exception("search_semantic_layer failed query=%r", query)
-        return f"Lỗi tìm semantic layer: {e}"
+        return f"Semantic layer search error: {e}"
     logger.info("search_semantic_layer query=%r hits=%s",
                 query, [d.metadata["column_name"] for d in docs])
     return semantic_index.format_docs(docs)
@@ -74,9 +74,9 @@ def search_semantic_layer(query: str, k: int = DEFAULT_TOP_K) -> str:
 @tool
 def lookup_values(dimension: str, contains: str = "", limit: int = 20,
                   runtime: ToolRuntime[UserContext] = None) -> str:
-    """Tra các giá trị thực tế của một dimension dạng chuỗi (vd tên vùng, bang, ngành hàng) để dùng đúng trong filter."""
+    """Look up the actual values of a string dimension (e.g. region, state, category names) so filters use the exact spelling."""
     if bad := _check_members([dimension]):
-        return f"Không có member: {bad}. Gọi search_semantic_layer."
+        return f"No such member: {bad}. Call search_semantic_layer."
     q: dict = {"dimensions": [dimension], "limit": limit, "order": {dimension: "asc"}}
     if contains:
         q["filters"] = [{"member": dimension, "operator": "contains", "values": [contains]}]
@@ -92,14 +92,14 @@ def run_query(measures: list[str],
               order: dict[str, Literal["asc", "desc"]] | None = None,
               limit: int = 100,
               runtime: ToolRuntime[UserContext] = None) -> str:
-    """Chạy truy vấn trên semantic layer. Trả về số dòng và tối đa 50 dòng đầu dạng JSON."""
+    """Run a query on the semantic layer. Returns the row count and at most the first 50 rows as JSON."""
     dimensions = dimensions or []
     names = list(measures) + dimensions + [f.member for f in (filters or [])]
     if time_dimension:
         names.append(time_dimension.dimension)
     if bad := _check_members(names):
         logger.warning("run_query unknown members: %s", bad)
-        return f"Không có member: {bad}. Gọi search_semantic_layer để xem tên đúng."
+        return f"No such member: {bad}. Call search_semantic_layer to see the correct names."
 
     q: dict = {"measures": measures, "dimensions": dimensions, "limit": min(max(limit, 1), 500)}
     if time_dimension:
@@ -118,9 +118,9 @@ def run_query(measures: list[str],
     logger.info("run_query user=%s query=%s", user_id, json.dumps(q, ensure_ascii=False))
     try:
         res = cube_client.load(q, user_id)
-    except Exception as e:  # trả lỗi cho LLM tự sửa query
+    except Exception as e:  # return the error to the LLM so it can fix the query
         logger.exception("run_query Cube error user=%s", user_id)
-        return f"Lỗi Cube: {e}"
+        return f"Cube error: {e}"
     rows = res.get("data", [])
     logger.info("run_query rows=%d", len(rows))
     annotation = res.get("annotation", {})
@@ -141,17 +141,17 @@ def run_query(measures: list[str],
 
 @tool
 def save_user_note(note: str, runtime: ToolRuntime[UserContext]) -> str:
-    """Lưu một thuật ngữ/ưu tiên lâu dài của người dùng (vd định nghĩa 'giờ cao điểm')."""
+    """Save a long-term user term/preference (e.g. the definition of 'peak hour')."""
     if runtime.store is None:
-        return "Long-term memory chưa bật."
+        return "Long-term memory is not enabled."
     ns = ("users", runtime.context.user_id, "notes")
     runtime.store.put(ns, str(uuid.uuid4()), {"note": note})
-    return "Đã lưu."
+    return "Saved."
 
 
 @tool
 def recall_user_notes(runtime: ToolRuntime[UserContext]) -> str:
-    """Đọc các thuật ngữ/ưu tiên người dùng đã lưu trước đó."""
+    """Read the terms/preferences the user saved earlier."""
     if runtime.store is None:
         return "[]"
     items = runtime.store.search(("users", runtime.context.user_id, "notes"), limit=50)
@@ -184,7 +184,7 @@ def build_agent(model=None, checkpointer=None, store=None):
 
 
 def make_memory():
-    """(checkpointer, store): Postgres nếu có AGENT_DB_URI, không thì in-memory (mất khi restart)."""
+    """(checkpointer, store): Postgres if AGENT_DB_URI is set, otherwise in-memory (lost on restart)."""
     uri = os.getenv("AGENT_DB_URI")
     if not uri:
         from langgraph.checkpoint.memory import InMemorySaver
@@ -201,14 +201,14 @@ def make_memory():
 
 
 def suggest_chart(record: dict) -> dict:
-    """Heuristic đơn giản: chuỗi thời gian -> line; 1 dimension -> bar; còn lại -> table."""
+    """Simple heuristic: time series -> line; 1 dimension -> bar; otherwise -> table."""
     q = record["query"]
     measures = q.get("measures", [])
     dims = q.get("dimensions") or []
     td = (q.get("timeDimensions") or [{}])[0]
     if td.get("granularity"):
         x = f"{td['dimension']}.{td['granularity']}"
-        if len({row.get(x) for row in record["rows"]}) > 1:  # >= 2 mốc thời gian mới vẽ line
+        if len({row.get(x) for row in record["rows"]}) > 1:  # draw a line only with >= 2 time points
             return {"type": "line", "x": x, "y": measures, "color": dims[0] if dims else None}
     if len(dims) == 1 and measures:
         return {"type": "bar", "x": dims[0], "y": measures}
@@ -216,13 +216,13 @@ def suggest_chart(record: dict) -> dict:
 
 
 def _text(content) -> str:
-    if isinstance(content, list):  # một số provider trả content blocks
+    if isinstance(content, list):  # some providers return content blocks
         return "".join(b.get("text", "") for b in content if isinstance(b, dict))
     return content
 
 
 def ask(agent, message: str, thread_id: str, user_id: str = "anonymous") -> dict:
-    """Hỏi agent một câu. Trả {"answer": str, "results": [query record + chart]}."""
+    """Ask the agent a question. Returns {"answer": str, "results": [query record + chart]}."""
     results: list = []
     token = current_results.set(results)
     started = time.perf_counter()

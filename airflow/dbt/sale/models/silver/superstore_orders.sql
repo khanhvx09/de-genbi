@@ -1,4 +1,4 @@
--- typed, dedup theo row_id, bỏ dòng thiếu khoá / sai ngày
+-- typed, dedup by row_id, drop rows with missing keys / bad dates
 WITH typed AS (
     SELECT
         TRY_CAST(

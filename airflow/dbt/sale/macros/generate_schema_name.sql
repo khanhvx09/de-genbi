@@ -1,5 +1,5 @@
 {#
-  Ghi đè mặc định của dbt (<target.schema>_<custom>): dùng đúng tên +schema -> delta.silver, delta.gold.
+  Overrides dbt's default (<target.schema>_<custom>): use the +schema name as-is -> delta.silver, delta.gold.
 #}
 {% macro generate_schema_name(custom_schema_name, node) -%}
   {%- if custom_schema_name is none -%}

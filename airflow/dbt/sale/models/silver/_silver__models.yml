@@ -3,7 +3,7 @@ version: 2
 models:
   - name: superstore_orders
     description: >
-      Order line Superstore đã ép kiểu, parse ngày, null -> 0 cho số đo, khử trùng lặp theo row_id.
+      Superstore order lines with typed columns, parsed dates, null -> 0 for measures, deduplicated by row_id.
     columns:
       - name: row_id
         data_tests: [unique, not_null]
@@ -28,10 +28,10 @@ models:
               arguments:
                 values: [Furniture, Office Supplies, Technology]
       - name: sales
-        description: Doanh thu (USD) của order line, đã trừ discount
+        description: Order line revenue (USD), after discount
       - name: discount
-        description: Tỷ lệ giảm giá 0..1
+        description: Discount rate 0..1
       - name: profit
-        description: Lợi nhuận (USD), có thể âm
+        description: Profit (USD), can be negative
       - name: source_file
-        description: File raw trên RustFS mà dòng này đến từ
+        description: Raw file on RustFS this row came from

@@ -1,4 +1,4 @@
-"""Vector index metadata của Cube: CubeSemanticLoader -> embeddings -> tìm member liên quan tới câu hỏi."""
+"""Vector index of Cube metadata: CubeSemanticLoader -> embeddings -> find members relevant to the question."""
 from __future__ import annotations
 
 import logging
@@ -15,9 +15,9 @@ import cube_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EMBEDDING_MODEL = "openai:text-embedding-3-small"  # đổi qua env EMBEDDING_MODEL
+DEFAULT_EMBEDDING_MODEL = "openai:text-embedding-3-small"  # override via env EMBEDDING_MODEL
 INDEX_TTL_S = int(os.getenv("SEMANTIC_INDEX_TTL_S", "3600"))
-INDEX_USER = "agent"  # index dùng chung; quyền theo user vẫn do Cube kiểm khi /load
+INDEX_USER = "agent"  # shared index; per-user permissions are still enforced by Cube on /load
 
 _lock = threading.Lock()
 _index: dict = {"at": 0.0, "store": None}
@@ -27,15 +27,15 @@ def _load_docs() -> list[Document]:
     loader = CubeSemanticLoader(
         cube_api_url=cube_client.CUBE_API_URL,
         cube_api_token=cube_client.make_token(INDEX_USER),
-        load_dimension_values=False,  # đã có tool lookup_values, tránh gọi /load cho từng dimension
+        load_dimension_values=False,  # lookup_values tool already exists; avoid calling /load per dimension
     )
     docs = loader.load()
     views = [d for d in docs if d.metadata["cube_data_obj_type"] == "view"]
-    return views or docs  # chưa có view thì fallback sang cubes
+    return views or docs  # fall back to cubes if there are no views yet
 
 
 def _get_store() -> InMemoryVectorStore:
-    with _lock:  # Streamlit chạy nhiều thread, tránh build index song song
+    with _lock:  # Streamlit runs multiple threads; avoid building the index concurrently
         if _index["store"] is None or time.time() - _index["at"] > INDEX_TTL_S:
             docs = _load_docs()
             embeddings = init_embeddings(os.getenv("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL))
@@ -49,7 +49,7 @@ def search(query: str, k: int) -> list[Document]:
 
 
 def format_docs(docs: list[Document]) -> str:
-    """Nhóm theo view để LLM biết member nào thuộc view nào."""
+    """Group by view so the LLM knows which member belongs to which view."""
     by_view: dict[str, list[Document]] = {}
     for d in docs:
         by_view.setdefault(d.metadata["table_name"], []).append(d)
